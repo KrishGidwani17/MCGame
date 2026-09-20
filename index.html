@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Minecraft Challenge Night</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+/* MINECRAFT FONT:
+   Put a font file at fonts/Minecraft.woff2 (or .ttf) next to this index.html and it is used automatically.
+   Until then it falls back to the pixel font "Press Start 2P". */
+@font-face {
+  font-family: 'Minecraft';
+  src: local('Minecraft'), local('Minecraftia'),
+       url('fonts/Minecraft.woff2') format('woff2'),
+       url('fonts/Minecraft.ttf') format('truetype');
+  font-display: swap;
+}
+:root {
+  --gold: #ffd83d;
+  --p1: #55ffff;
+  --p2: #ff77c8;
+  --stone: #8b8b8b;
+  --row: 72px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  font-family: 'Minecraft', 'Press Start 2P', monospace;
+  color: #fff;
+  background-color: #4a3119;
+  background-image:
+    linear-gradient(45deg, rgba(0,0,0,.18) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.18) 75%),
+    linear-gradient(45deg, rgba(0,0,0,.18) 25%, transparent 25%, transparent 75%, rgba(0,0,0,.18) 75%);
+  background-size: 48px 48px;
+  background-position: 0 0, 24px 24px;
+  line-height: 1.6;
+  font-size: 12px;
+  padding-bottom: 60px;
+  min-height: 100vh;
+}
+
+header {
+  background: #5da130; border-bottom: 8px solid #6b4a2b; box-shadow: inset 0 -8px 0 #3f7a1e;
+  text-align: center; padding: 26px 12px 30px;
+}
+h1 { margin: 0; font-size: clamp(16px, 4vw, 28px); text-shadow: 3px 3px 0 #000; font-weight: normal; }
+header p { margin: 10px 0 0; text-shadow: 2px 2px 0 #000; font-size: 10px; opacity: .85; }
+main { max-width: 900px; margin: 20px auto; padding: 0 14px; display: grid; gap: 20px; }
+
+.panel {
+  background: rgba(0,0,0,.38);
+  border: 4px solid #000;
+  box-shadow: inset 4px 4px 0 rgba(255,255,255,.16), inset -4px -4px 0 rgba(0,0,0,.35);
+  padding: 18px;
+}
+.panel h2 { margin: 0 0 14px; font-size: 14px; font-weight: normal; text-shadow: 2px 2px 0 #000; }
+
+button, input, select { font-family: inherit; font-size: 11px; }
+button {
+  cursor: pointer; background: var(--stone); color: #fff; border: 3px solid #000;
+  box-shadow: inset 3px 3px 0 #c6c6c6, inset -3px -3px 0 #555;
+  padding: 10px 14px; text-shadow: 2px 2px 0 #3a3a3a;
+}
+button:hover:not(:disabled) { background: #a0a0c8; box-shadow: inset 3px 3px 0 #dcdcff, inset -3px -3px 0 #6a6a99; }
+button:active:not(:disabled) { transform: translateY(2px); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.green { background: #4f9a2a; box-shadow: inset 3px 3px 0 #8ee15a, inset -3px -3px 0 #2c5c14; }
+button.green:hover:not(:disabled) { background: #63b83a; box-shadow: inset 3px 3px 0 #a5f57a, inset -3px -3px 0 #2c5c14; }
+button.red { background: #a83a2c; box-shadow: inset 3px 3px 0 #e8806f, inset -3px -3px 0 #611e15; }
+button.small { padding: 6px 10px; font-size: 10px; }
+input[type=text], input[type=number] {
+  background: #111; color: #fff; border: 3px solid #000; box-shadow: inset 3px 3px 0 #444;
+  padding: 8px 10px; width: 100%;
+}
+label { display: block; font-size: 10px; margin-bottom: 4px; }
+
+.setup { display: grid; grid-template-columns: 1fr 1fr 110px; gap: 12px; align-items: end; }
+@media (max-width: 640px) { .setup { grid-template-columns: 1fr; } }
+.row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 14px; }
+.row.left { justify-content: flex-start; }
+.muted { color: #b8b8c8; }
+.small-note { font-size: 10px; }
+
+/* Room bar */
+.room { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.room input { width: 130px; text-transform: uppercase; letter-spacing: 2px; text-align: center; }
+.room .status { flex: 1; min-width: 180px; font-size: 10px; }
+details.help { margin-top: 12px; font-size: 10px; }
+details.help summary { cursor: pointer; }
+details.help ol { padding-left: 18px; margin: 10px 0 0; }
+details.help code { background: #000; padding: 1px 5px; }
+
+/* Scoreboard */
+.scoreboard { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; text-align: center; }
+.player { background: rgba(0,0,0,.55); border: 4px solid #000; padding: 14px 8px; box-shadow: inset 0 0 0 3px rgba(255,255,255,.12); transition: box-shadow .3s; }
+.player .name { font-size: 12px; word-break: break-word; }
+.player .score { font-size: clamp(30px, 8vw, 54px); margin: 8px 0; text-shadow: 3px 3px 0 #000; }
+.p1 .name, .p1 .score { color: var(--p1); }
+.p2 .name, .p2 .score { color: var(--p2); }
+.player.leading { box-shadow: inset 0 0 0 3px var(--gold); }
+.vs { font-size: 16px; text-shadow: 2px 2px 0 #000; }
+.target { text-align: center; margin-top: 12px; font-size: 10px; }
+
+/* Casino reel */
+.casino {
+  position: relative; margin-top: 22px; padding: 18px;
+  background: linear-gradient(#2a0f3f, #12071f);
+  border: 4px solid #000;
+}
+.casino::before, .casino::after {
+  content: ''; position: absolute; pointer-events: none;
+  inset: 4px; border: 6px dotted var(--gold);
+}
+.casino::before { animation: bulbA 1s steps(1) infinite; }
+.casino::after  { inset: 4px; border-color: #ff5a5a; animation: bulbB 1s steps(1) infinite; }
+@keyframes bulbA { 0% { opacity: 1; } 50% { opacity: .15; } }
+@keyframes bulbB { 0% { opacity: .15; } 50% { opacity: 1; } }
+.casino.spinning::before, .casino.spinning::after { animation-duration: .25s; }
+.casino-title { text-align: center; color: var(--gold); text-shadow: 2px 2px 0 #000; font-size: 11px; margin: 4px 0 12px; letter-spacing: 2px; }
+.reel-wrap {
+  position: relative; height: calc(var(--row) * 3); overflow: hidden;
+  background: #07070c; border: 4px solid #000; box-shadow: inset 0 0 20px #000;
+}
+.strip { position: absolute; left: 0; right: 0; top: 0; will-change: transform; }
+.item {
+  height: var(--row); display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 0 38px; font-size: clamp(10px, 2.5vw, 15px); line-height: 1.4; color: #cfcfe8; opacity: .65;
+}
+.item.hit { color: var(--gold); opacity: 1; text-shadow: 2px 2px 0 #000; animation: pop .5s ease-out; }
+@keyframes pop { 0% { transform: scale(.85); } 60% { transform: scale(1.08); } 100% { transform: scale(1); } }
+.band {
+  position: absolute; left: 0; right: 0; top: var(--row); height: var(--row); pointer-events: none;
+  border-top: 3px solid var(--gold); border-bottom: 3px solid var(--gold); background: rgba(255,216,61,.07);
+}
+.fade { position: absolute; inset: 0; pointer-events: none; background: linear-gradient(#07070c 0%, transparent 32%, transparent 68%, #07070c 100%); }
+.arrow { position: absolute; top: calc(var(--row) * 1.5); transform: translateY(-50%); color: var(--gold); font-size: 16px; pointer-events: none; text-shadow: 2px 2px 0 #000; }
+.arrow.l { left: 8px; } .arrow.r { right: 8px; }
+.meta { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: 10px; flex-wrap: wrap; }
+.casino.spinning .meta .tag { visibility: hidden; }
+.round-label { color: #c9a8ff; }
+.timer { font-size: 16px; }
+
+.win-banner { text-align: center; background: rgba(0,0,0,.6); border: 4px solid var(--gold); padding: 22px; color: var(--gold); font-size: 14px; text-shadow: 2px 2px 0 #000; margin-top: 18px; }
+.hidden { display: none !important; }
+
+ul.log { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ul.log li { background: rgba(0,0,0,.5); border: 3px solid #000; padding: 10px; font-size: 10px; }
+.c1 { color: var(--p1); } .c2 { color: var(--p2); } .cg { color: var(--gold); }
+.empty { color: #9a9ab0; font-size: 10px; }
+
+.alltime { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; text-align: center; }
+.alltime div { background: rgba(0,0,0,.5); border: 3px solid #000; padding: 10px; font-size: 10px; }
+.alltime b { display: block; font-size: 22px; font-weight: normal; margin-top: 4px; }
+
+details summary { cursor: pointer; font-size: 11px; }
+.custom-list { margin-top: 10px; display: grid; gap: 6px; }
+.custom-list div { display: flex; justify-content: space-between; gap: 8px; background: rgba(0,0,0,.5); padding: 6px 8px; border: 2px solid #000; font-size: 10px; align-items: center; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>⛏ Minecraft Challenge Night</h1>
+  <p>First one to do it wins the point!</p>
+</header>
+
+<main>
+
+  <!-- ROOM / SYNC -->
+  <section class="panel" id="roomPanel">
+    <h2>Play Together</h2>
+
+    <div id="roomOff" class="hidden">
+      <p class="small-note" style="margin-top:0">Sync is not set up yet, so scores are saved on this device only. Follow the steps below once (about 5 minutes, free) and you can both use the same scoreboard from separate phones/computers.</p>
+    </div>
+
+    <div id="roomOn" class="hidden">
+      <div class="room" id="roomLobby">
+        <input type="text" id="roomInput" maxlength="8" placeholder="CODE">
+        <button class="green" id="joinBtn">Join Room</button>
+        <button id="createBtn">Create New Room</button>
+        <span class="status muted" id="roomHint">Create a room, then send your partner the invite link.</span>
+      </div>
+      <div class="room hidden" id="roomActive">
+        <span class="status" id="roomStatus"></span>
+        <button class="small" id="copyBtn">📋 Copy Invite Link</button>
+        <button class="small red" id="leaveBtn">Leave Room</button>
+      </div>
+    </div>
+
+    <details class="help">
+      <summary>How do I set up sync? (one-time, free)</summary>
+      <ol>
+        <li>Go to <b>console.firebase.google.com</b> and create a project (no Analytics needed).</li>
+        <li>In the project: <b>Build → Realtime Database → Create Database</b>. Start in <b>test mode</b>.</li>
+        <li><b>Project settings (gear) → Your apps → Web (&lt;/&gt;)</b>, register an app, and copy the <code>firebaseConfig</code> values.</li>
+        <li>Open <code>index.html</code>, find <code>FIREBASE_CONFIG</code> near the top of the script, and paste the values in. Commit it.</li>
+        <li>Reload the site. Create a room, share the invite link, done.</li>
+      </ol>
+    </details>
+  </section>
+
+  <!-- SETUP -->
+  <section class="panel" id="setupPanel">
+    <h2>New Game</h2>
+    <div class="setup">
+      <div><label for="p1Input">Player 1</label><input type="text" id="p1Input" maxlength="16" placeholder="You"></div>
+      <div><label for="p2Input">Player 2</label><input type="text" id="p2Input" maxlength="16" placeholder="Girlfriend"></div>
+      <div><label for="targetInput">First to</label><input type="number" id="targetInput" min="1" max="50" value="5"></div>
+    </div>
+    <div class="row left"><button class="green" id="startBtn">▶ Start New Game</button></div>
+  </section>
+
+  <!-- GAME -->
+  <section class="panel hidden" id="gamePanel">
+    <h2>Scoreboard</h2>
+    <div class="scoreboard">
+      <div class="player p1" id="card1"><div class="name" id="n1"></div><div class="score" id="s1">0</div></div>
+      <div class="vs">VS</div>
+      <div class="player p2" id="card2"><div class="name" id="n2"></div><div class="score" id="s2">0</div></div>
+    </div>
+    <div class="target" id="targetLabel"></div>
+
+    <div id="playArea">
+      <div class="casino" id="casino">
+        <div class="casino-title">★ CHALLENGE ROULETTE ★</div>
+        <div class="reel-wrap">
+          <div class="strip" id="strip"></div>
+          <div class="band"></div>
+          <div class="fade"></div>
+          <div class="arrow l">▶</div><div class="arrow r">◀</div>
+        </div>
+        <div class="meta">
+          <span class="round-label" id="roundLabel"></span>
+          <span class="tag muted" id="challengeTag"></span>
+          <span class="timer" id="timer">00:00</span>
+        </div>
+      </div>
+
+      <div class="row">
+        <button class="green" id="win1"></button>
+        <button class="green" id="win2"></button>
+      </div>
+      <div class="row">
+        <button class="small" id="skipBtn">🎰 Skip / Respin</button>
+        <button class="small" id="undoBtn">↩ Undo Last</button>
+        <button class="small red" id="endBtn">✖ End Game</button>
+      </div>
+    </div>
+
+    <div class="win-banner hidden" id="winBanner"></div>
+    <div class="row hidden" id="afterRow"><button id="undoBtn2">↩ Undo Last Point</button></div>
+
+    <h2 style="margin-top:24px">This Game</h2>
+    <ul class="log" id="currentLog"></ul>
+  </section>
+
+  <!-- HISTORY -->
+  <section class="panel">
+    <h2>Game History</h2>
+    <div class="alltime">
+      <div><span id="at1Name"></span><b id="at1Wins">0</b>games won</div>
+      <div><span id="at2Name"></span><b id="at2Wins">0</b>games won</div>
+    </div>
+    <ul class="log" id="historyLog"></ul>
+    <div class="row left"><button class="small red" id="clearHistory">Clear History</button></div>
+  </section>
+
+  <!-- CHALLENGES -->
+  <section class="panel">
+    <h2>Challenges</h2>
+    <details>
+      <summary>Add your own challenges (<span id="customCount">0</span>)</summary>
+      <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+        <input type="text" id="customInput" maxlength="80" placeholder="e.g. Ride a strider across lava" style="flex:1;min-width:200px">
+        <button class="small green" id="addCustom">Add</button>
+      </div>
+      <div class="custom-list" id="customList"></div>
+    </details>
+    <p class="muted small-note" style="margin-bottom:0">
+      Challenges are shuffled with no repeats until every one has been used in a game.
+      Total in the pool: <span id="poolCount"></span>
+    </p>
+  </section>
+
+</main>
+
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+(function () {
+  // =====================================================================
+  //  PASTE YOUR FIREBASE CONFIG HERE to turn on two-device sync.
+  //  (Leave the values empty to play on one device only.)
+  // =====================================================================
+  const FIREBASE_CONFIG = {
+    apiKey: "",
+    authDomain: "",
+    databaseURL: "",
+    projectId: "",
+    storageBucket: "",
+    messagingSenderId: "",
+    appId: ""
+  };
+  const FB_ON = !!(FIREBASE_CONFIG.apiKey && FIREBASE_CONFIG.databaseURL && typeof firebase !== "undefined");
+
+  const SPIN_MS = 4600;
+  const ROW = 72;
+
+  const BUILT_IN = [
+    { t: "Bake a cake", d: "Medium" },
+    { t: "Catch a pufferfish", d: "Medium" },
+    { t: "Craft a diamond pickaxe", d: "Hard" },
+    { t: "Tame a wolf", d: "Easy" },
+    { t: "Tame a cat", d: "Medium" },
+    { t: "Trade with a villager", d: "Easy" },
+    { t: "Craft a full set of iron armor", d: "Medium" },
+    { t: "Smelt a stack of any ore", d: "Medium" },
+    { t: "Find and collect a diamond", d: "Hard" },
+    { t: "Make a Nether portal and step inside", d: "Hard" },
+    { t: "Kill a Creeper without taking damage", d: "Medium" },
+    { t: "Collect 3 different colors of wool", d: "Easy" },
+    { t: "Breed two cows", d: "Easy" },
+    { t: "Breed two chickens", d: "Easy" },
+    { t: "Craft a bed and sleep in it", d: "Easy" },
+    { t: "Build a 5-block tower and stand on top", d: "Easy" },
+    { t: "Catch a salmon", d: "Easy" },
+    { t: "Catch a tropical fish", d: "Hard" },
+    { t: "Craft a bookshelf", d: "Medium" },
+    { t: "Make a golden apple", d: "Hard" },
+    { t: "Get a bucket of water AND a bucket of lava", d: "Medium" },
+    { t: "Craft a fishing rod and a bow", d: "Easy" },
+    { t: "Harvest 10 carrots or potatoes", d: "Easy" },
+    { t: "Wear a full set of leather armor", d: "Easy" },
+    { t: "Find a village", d: "Medium" },
+    { t: "Find a cave and collect 10 coal", d: "Easy" },
+    { t: "Kill a Skeleton and get an arrow", d: "Easy" },
+    { t: "Ride a pig or horse", d: "Medium" },
+    { t: "Craft a compass", d: "Medium" },
+    { t: "Craft a shield", d: "Easy" },
+    { t: "Craft a boat and sail 20 blocks", d: "Easy" },
+    { t: "Make a pumpkin pie", d: "Medium" },
+    { t: "Craft a cookie", d: "Easy" },
+    { t: "Mine obsidian", d: "Hard" },
+    { t: "Collect an ender pearl", d: "Hard" },
+    { t: "Shear a sheep", d: "Easy" },
+    { t: "Craft a furnace and cook a steak", d: "Easy" },
+    { t: "Reach 20 XP levels", d: "Hard" },
+    { t: "Build a 3x3 house with a door", d: "Medium" },
+    { t: "Grow a tree, then chop it down", d: "Medium" },
+    { t: "Craft a golden pickaxe", d: "Medium" },
+    { t: "Make a jack-o'-lantern", d: "Medium" },
+    { t: "Craft a minecart on a rail", d: "Medium" },
+    { t: "Get honey from a beehive", d: "Hard" },
+    { t: "Craft a jukebox", d: "Hard" },
+    { t: "Reach Y=200 or higher", d: "Medium" }
+  ];
+
+  // ---------- state ----------
+  const LOCAL_KEY = "mc-challenge-night-v2";
+  const ROOM_KEY = "mc-challenge-night-room";
+  const defaultState = () => ({ p1: "Player 1", p2: "Player 2", target: 5, game: null, history: [], custom: [] });
+  const toArr = x => Array.isArray(x) ? x : (x && typeof x === "object" ? Object.values(x) : []);
+  const clean = o => JSON.parse(JSON.stringify(o));
+
+  function normalize(v) {
+    const s = Object.assign(defaultState(), v || {});
+    s.history = toArr(s.history).map(h => Object.assign({}, h, { rounds: toArr(h.rounds) }));
+    s.custom = toArr(s.custom);
+    s.game = s.game || null;
+    if (s.game) { s.game.used = toArr(s.game.used); s.game.rounds = toArr(s.game.rounds); }
+    return s;
+  }
+  function loadLocal() { try { return normalize(JSON.parse(localStorage.getItem(LOCAL_KEY))); } catch (e) { return defaultState(); } }
+  function saveLocal() { try { localStorage.setItem(LOCAL_KEY, JSON.stringify(S)); } catch (e) {} }
+
+  let S = loadLocal();
+  let roomRef = null, room = null, db = null, online = false, syncErr = "";
+
+  const $ = id => document.getElementById(id);
+  const pool = s => BUILT_IN.concat((s || S).custom.map(t => ({ t, d: "Custom" })));
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  // ---------- mutations (run locally or inside a Firebase transaction) ----------
+  function mutate(fn) {
+    if (roomRef) {
+      roomRef.transaction(cur => {
+        const s = normalize(cur);
+        const r = fn(s);
+        return r ? clean(r) : undefined;
+      }, err => { if (err) { syncErr = err.message; renderRoom(); } });
+    } else {
+      const r = fn(S);
+      if (r) { S = normalize(clean(r)); saveLocal(); render(); }
+    }
+  }
+
+  function pick(s, g) {
+    const all = pool(s);
+    let avail = all.filter(c => !g.used.includes(c.t));
+    if (!avail.length) { g.used = []; avail = all; }
+    const c = avail[Math.floor(Math.random() * avail.length)];
+    g.used.push(c.t);
+    return c;
+  }
+  function setCurrent(g, c) {
+    g.current = { t: c.t, d: c.d || "", spin: uid() };
+    g.roundStart = Date.now() + SPIN_MS;
+  }
+  function archive(s, unfinished) {
+    const g = s.game;
+    const winner = g.s1 === g.s2 ? 0 : (g.s1 > g.s2 ? 1 : 2);
+    s.history.unshift({
+      id: g.id, date: Date.now(), p1: g.p1, p2: g.p2, s1: g.s1, s2: g.s2,
+      target: g.target, winner: unfinished ? winner : g.winner, unfinished: !!unfinished,
+      rounds: g.rounds.slice()
+    });
+  }
+  const inProgress = s => s.game && !s.game.finished && (s.game.s1 + s.game.s2 > 0);
+
+  function startGame() {
+    const n1 = $("p1Input").value.trim() || "Player 1";
+    const n2 = $("p2Input").value.trim() || "Player 2";
+    const target = Math.max(1, Math.min(50, parseInt($("targetInput").value) || 5));
+    if (inProgress(S) && !confirm("A game is in progress. Log it as unfinished and start a new one?")) return;
+    mutate(s => {
+      if (inProgress(s)) archive(s, true);
+      s.p1 = n1; s.p2 = n2; s.target = target;
+      const g = { id: uid(), p1: n1, p2: n2, target, s1: 0, s2: 0, round: 1, used: [], rounds: [],
+                  startedAt: Date.now(), finished: false, winner: null, current: null, roundStart: 0 };
+      setCurrent(g, pick(s, g));
+      s.game = g;
+      return s;
+    });
+  }
+
+  function award(who) {
+    const g0 = S.game;
+    if (!g0 || g0.finished) return;
+    const expectRound = g0.round, expectSpin = g0.current.spin;
+    mutate(s => {
+      const g = s.game;
+      // ignore if the round already moved on (e.g. the other player scored first)
+      if (!g || g.finished || g.round !== expectRound || g.current.spin !== expectSpin) return null;
+      const secs = Math.max(0, Math.round((Date.now() - g.roundStart) / 1000));
+      if (who === 1) g.s1++; else g.s2++;
+      g.rounds.push({ t: g.current.t, winner: who, secs });
+      if (g.s1 >= g.target || g.s2 >= g.target) {
+        g.finished = true; g.winner = g.s1 >= g.target ? 1 : 2;
+        archive(s, false);
+      } else {
+        g.round++;
+        setCurrent(g, pick(s, g));
+      }
+      return s;
+    });
+  }
+
+  function respin() {
+    const g0 = S.game;
+    if (!g0 || g0.finished) return;
+    const expectSpin = g0.current.spin;
+    mutate(s => {
+      const g = s.game;
+      if (!g || g.finished || g.current.spin !== expectSpin) return null;
+      setCurrent(g, pick(s, g));
+      return s;
+    });
+  }
+
+  function undo() {
+    const g0 = S.game;
+    if (!g0 || g0.rounds.length === 0) return;
+    mutate(s => {
+      const g = s.game;
+      if (!g || g.rounds.length === 0) return null;
+      if (g.finished) {
+        s.history = s.history.filter(h => h.id !== g.id);
+        g.finished = false; g.winner = null;
+      } else {
+        g.round--;
+      }
+      const last = g.rounds.pop();
+      if (last.winner === 1) g.s1--; else g.s2--;
+      const found = pool(s).find(c => c.t === last.t);
+      setCurrent(g, { t: last.t, d: found ? found.d : "" });
+      return s;
+    });
+  }
+
+  function endGame() {
+    if (!S.game || S.game.finished) return;
+    if (!confirm("End this game now and log the current score?")) return;
+    mutate(s => {
+      const g = s.game;
+      if (!g || g.finished) return null;
+      g.finished = true;
+      g.winner = g.s1 === g.s2 ? 0 : (g.s1 > g.s2 ? 1 : 2);
+      archive(s, true);
+      return s;
+    });
+  }
+
+  // ---------- rooms ----------
+  function initFirebase() {
+    if (db) return;
+    if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+    db = firebase.database();
+    db.ref(".info/connected").on("value", s => { online = !!s.val(); renderRoom(); });
+  }
+  function cleanCode(c) { return (c || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8); }
+  function randomCode() {
+    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let c = ""; for (let i = 0; i < 4; i++) c += chars[Math.floor(Math.random() * chars.length)];
+    return c;
+  }
+  function joinRoom(code) {
+    code = cleanCode(code);
+    if (!code || !FB_ON) return;
+    initFirebase();
+    if (roomRef) roomRef.off();
+    const seed = clean(S);
+    room = code; syncErr = "";
+    roomRef = db.ref("rooms/" + code);
+    roomRef.on("value", snap => {
+      const v = snap.val();
+      if (v === null) { roomRef.set(clean(normalize(seed))); return; }
+      S = normalize(v);
+      lastRoomSeen = true;
+      render();
+    }, err => { syncErr = err.message; renderRoom(); });
+    try { localStorage.setItem(ROOM_KEY, code); location.hash = code; } catch (e) {}
+    lastRoomSeen = false;
+    renderRoom();
+  }
+  let lastRoomSeen = false;
+  function leaveRoom() {
+    if (roomRef) roomRef.off();
+    roomRef = null; room = null; syncErr = "";
+    try { localStorage.removeItem(ROOM_KEY); history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    S = loadLocal();
+    resetReel();
+    render();
+  }
+
+  // ---------- reel ----------
+  const reel = { spin: null, text: null, center: 1, landed: true };
+  function resetReel() { reel.spin = null; reel.text = null; }
+  function filler(prev) {
+    const all = pool();
+    let t; do { t = all[Math.floor(Math.random() * all.length)].t; } while (all.length > 1 && t === prev);
+    return t;
+  }
+  function makeItem(text) { const d = document.createElement("div"); d.className = "item"; d.textContent = text; return d; }
+
+  function syncReel(g) {
+    if (!g || g.finished || !g.current) return;
+    const strip = $("strip");
+    if (reel.spin === g.current.spin) return;
+    const startedAgo = Date.now() - (g.roundStart - SPIN_MS);
+    const fresh = startedAgo < 1800;
+    strip.innerHTML = "";
+    strip.style.transition = "none";
+    strip.style.transform = "translateY(0)";
+    if (!fresh) {
+      [filler(g.current.t), g.current.t, filler(g.current.t)].forEach(t => strip.appendChild(makeItem(t)));
+      reel.center = 1;
+    } else {
+      const N = 38, T = 34;
+      let prev = "";
+      for (let i = 0; i < N; i++) {
+        let t;
+        if (i === 1) t = reel.text || filler(prev);
+        else if (i === T) t = g.current.t;
+        else t = filler(prev);
+        prev = t;
+        strip.appendChild(makeItem(t));
+      }
+      reel.center = T;
+      void strip.offsetHeight; // reflow so the transition starts from the top
+      strip.style.transition = "transform " + SPIN_MS + "ms cubic-bezier(.12,.62,.1,1)";
+      strip.style.transform = "translateY(" + (-(T - 1) * ROW) + "px)";
+    }
+    reel.spin = g.current.spin;
+    reel.text = g.current.t;
+    reel.landed = false;
+  }
+
+  // ---------- render ----------
+  function fmt(secs) {
+    return String(Math.floor(secs / 60)).padStart(2, "0") + ":" + String(secs % 60).padStart(2, "0");
+  }
+  function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+  function renderRoom() {
+    $("roomOff").classList.toggle("hidden", FB_ON);
+    $("roomOn").classList.toggle("hidden", !FB_ON);
+    if (!FB_ON) return;
+    $("roomLobby").classList.toggle("hidden", !!room);
+    $("roomActive").classList.toggle("hidden", !room);
+    if (room) {
+      let msg;
+      if (syncErr) msg = "🔴 Sync error: " + syncErr;
+      else if (!online) msg = "🟡 Room " + room + " · reconnecting…";
+      else if (!lastRoomSeen) msg = "🟡 Room " + room + " · connecting…";
+      else msg = "🟢 Room " + room + " · synced live";
+      $("roomStatus").textContent = msg;
+    }
+  }
+
+  function render() {
+    renderRoom();
+    const g = S.game;
+    ["p1", "p2"].forEach(k => {
+      const inp = $(k + "Input");
+      if (document.activeElement !== inp && S[k] !== (k === "p1" ? "Player 1" : "Player 2")) inp.value = S[k];
+    });
+    if (document.activeElement !== $("targetInput")) $("targetInput").value = S.target;
+
+    $("gamePanel").classList.toggle("hidden", !g);
+    if (g) {
+      $("n1").textContent = g.p1; $("n2").textContent = g.p2;
+      $("s1").textContent = g.s1; $("s2").textContent = g.s2;
+      $("card1").classList.toggle("leading", g.s1 > g.s2);
+      $("card2").classList.toggle("leading", g.s2 > g.s1);
+      $("targetLabel").textContent = "First to " + g.target + " wins";
+      $("win1").textContent = "🏆 " + g.p1 + " got it";
+      $("win2").textContent = "🏆 " + g.p2 + " got it";
+
+      $("playArea").classList.toggle("hidden", g.finished);
+      $("winBanner").classList.toggle("hidden", !g.finished);
+      $("afterRow").classList.toggle("hidden", !g.finished);
+      if (g.finished) {
+        $("winBanner").textContent = g.winner === 0
+          ? "It's a tie at " + g.s1 + " - " + g.s2 + "!"
+          : "★ " + (g.winner === 1 ? g.p1 : g.p2) + " wins " + g.s1 + " - " + g.s2 + "! ★";
+      } else {
+        $("roundLabel").textContent = "ROUND " + g.round;
+        $("challengeTag").textContent = g.current.d ? "Difficulty: " + g.current.d : "";
+        syncReel(g);
+      }
+
+      const log = $("currentLog"); log.innerHTML = "";
+      if (!g.rounds.length) log.appendChild(el("li", "empty", "No points scored yet. Go go go!"));
+      g.rounds.slice().reverse().forEach((r, i) => {
+        const li = el("li");
+        li.appendChild(el("span", "muted", "#" + (g.rounds.length - i) + " "));
+        li.appendChild(el("span", "cg", r.t));
+        li.appendChild(document.createElement("br"));
+        li.appendChild(el("span", r.winner === 1 ? "c1" : "c2", "→ " + (r.winner === 1 ? g.p1 : g.p2)));
+        li.appendChild(el("span", "muted", "  (" + fmt(r.secs) + ")"));
+        log.appendChild(li);
+      });
+    }
+    renderHistory();
+    renderCustom();
+    tick();
+  }
+
+  function renderHistory() {
+    const h = S.history;
+    const key = s => String(s).trim().toLowerCase();
+    const wins = {};
+    h.forEach(x => {
+      if (x.unfinished) return;
+      if (x.winner === 1) wins[key(x.p1)] = (wins[key(x.p1)] || 0) + 1;
+      if (x.winner === 2) wins[key(x.p2)] = (wins[key(x.p2)] || 0) + 1;
+    });
+    $("at1Name").textContent = S.p1; $("at2Name").textContent = S.p2;
+    $("at1Wins").textContent = wins[key(S.p1)] || 0;
+    $("at2Wins").textContent = wins[key(S.p2)] || 0;
+
+    const log = $("historyLog"); log.innerHTML = "";
+    if (!h.length) { log.appendChild(el("li", "empty", "No games logged yet. Finish a game and it shows up here.")); return; }
+    h.forEach((x, i) => {
+      const li = el("li");
+      const d = new Date(x.date);
+      li.appendChild(el("span", "muted", "Game " + (h.length - i) + " · " + d.toLocaleDateString() + " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
+      li.appendChild(document.createElement("br"));
+      li.appendChild(el("span", "c1", x.p1 + " " + x.s1));
+      li.appendChild(el("span", null, "  -  "));
+      li.appendChild(el("span", "c2", x.s2 + " " + x.p2));
+      li.appendChild(document.createElement("br"));
+      let result;
+      if (x.winner === 0) result = x.unfinished ? "Ended early · tied" : "Tie";
+      else result = (x.unfinished ? "Ended early · " + (x.winner === 1 ? x.p1 : x.p2) + " leading" : "Winner: " + (x.winner === 1 ? x.p1 : x.p2));
+      li.appendChild(el("span", "cg", result));
+      log.appendChild(li);
+    });
+  }
+
+  function renderCustom() {
+    $("customCount").textContent = S.custom.length;
+    $("poolCount").textContent = pool().length;
+    const list = $("customList"); list.innerHTML = "";
+    S.custom.forEach((c, i) => {
+      const row = el("div");
+      row.appendChild(el("span", null, c));
+      const b = el("button", "small red", "✖");
+      b.onclick = () => mutate(s => { s.custom.splice(i, 1); return s; });
+      row.appendChild(b);
+      list.appendChild(row);
+    });
+  }
+
+  // runs twice a second: timer, button enabling, landing glow
+  function tick() {
+    const g = S.game;
+    if (!g || g.finished) return;
+    const now = Date.now();
+    const spinning = now < g.roundStart;
+    $("casino").classList.toggle("spinning", spinning);
+    ["win1", "win2", "skipBtn"].forEach(id => $(id).disabled = spinning);
+    $("timer").textContent = fmt(Math.max(0, Math.floor((now - g.roundStart) / 1000)));
+    if (!spinning && !reel.landed) {
+      reel.landed = true;
+      const it = $("strip").children[reel.center];
+      if (it) it.classList.add("hit");
+    }
+  }
+  setInterval(tick, 250);
+
+  // ---------- events ----------
+  $("startBtn").onclick = startGame;
+  $("win1").onclick = () => award(1);
+  $("win2").onclick = () => award(2);
+  $("skipBtn").onclick = respin;
+  $("undoBtn").onclick = undo;
+  $("undoBtn2").onclick = undo;
+  $("endBtn").onclick = endGame;
+  $("clearHistory").onclick = () => { if (confirm("Delete all game history?")) mutate(s => { s.history = []; return s; }); };
+  $("addCustom").onclick = () => {
+    const v = $("customInput").value.trim();
+    if (!v) return;
+    $("customInput").value = "";
+    mutate(s => { s.custom.push(v); return s; });
+  };
+  $("customInput").addEventListener("keydown", e => { if (e.key === "Enter") $("addCustom").click(); });
+
+  $("createBtn").onclick = () => joinRoom(randomCode());
+  $("joinBtn").onclick = () => joinRoom($("roomInput").value);
+  $("roomInput").addEventListener("keydown", e => { if (e.key === "Enter") $("joinBtn").click(); });
+  $("leaveBtn").onclick = leaveRoom;
+  $("copyBtn").onclick = () => {
+    const url = location.origin + location.pathname + "#" + room;
+    const done = () => { $("copyBtn").textContent = "✔ Copied!"; setTimeout(() => $("copyBtn").textContent = "📋 Copy Invite Link", 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(url).then(done, () => prompt("Copy this link:", url));
+    else prompt("Copy this link:", url);
+  };
+
+  // ---------- boot ----------
+  render();
+  if (FB_ON) {
+    let code = cleanCode(location.hash.replace("#", ""));
+    if (!code) { try { code = cleanCode(localStorage.getItem(ROOM_KEY)); } catch (e) {} }
+    if (code) joinRoom(code);
+  }
+})();
+</script>
+</body>
+</html>
