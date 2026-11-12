@@ -1,100 +1,71 @@
 # ⛏ Minecraft Challenge Night
 
-A two-player Minecraft challenge scoreboard with a casino-style challenge roulette. Play "first one to do X wins the point" games with a friend, with live shared scores on two devices.
+A Minecraft challenge game with a casino-style challenge roulette. Play solo, or race a friend to finish challenges first ("bake a cake", "catch a pufferfish", and more). Multiplayer is direct browser-to-browser, so there is no server, no account, no API key, and nothing is stored.
 
 **Live site:** https://krishgidwani17.github.io/MCGame/
 
 ## Features
 
 - Slot-machine roulette that picks a random challenge each round (no repeats until the pool is used up)
-- First-to-N scoring with a per-round timer
-- Live sync between two devices using shared room codes
-- Game history and all-time win tally
-- Skip/respin, undo last point, and end-game-early controls
-- Add your own custom challenges
+- **Single Player:** complete N challenges as fast as you can, with a per-round timer and a total time
+- **Multiplayer:** host a room, share a 6-digit code or invite link, and race to a target score
+- Skip/respin, undo last point, end game early, and Play Again
+- Add your own challenges (host or solo only, session only)
 - Minecraft-style UI (dirt background, grass header, blocky panels)
+- No storage: names, scores and history exist only while the page is open
 
 ## How to play
 
-1. Open the site and click **Create New Room** (or type your own room code and click **Join Room**).
-2. Send the invite link to your partner. They join automatically.
-3. Enter both names, choose the target score, and click **Start New Game**.
-4. The roulette spins and lands on a challenge. Race to do it in Minecraft.
-5. Whoever finishes first taps their **got it** button. First to the target score wins.
+**Single player:** enter your name and a goal, then click **Single Player**.
+
+**Multiplayer:**
+1. The host enters a name and clicks **Host Multiplayer**. A 6-digit code appears.
+2. The host sends the code or the invite link to a friend.
+3. The friend opens the link (or types the code), enters a name, and clicks **Join Game**.
+4. The host sets the goal ("first to") and clicks **Start Game**.
+5. The roulette spins for both players. When you finish the challenge in Minecraft, press **I got it!**. The first to reach the target wins.
+6. After a win, either player can click **Play Again**.
 
 ## Tech stack
 
 - Vanilla HTML, CSS and JavaScript in a single `index.html` (no framework, no build step)
 - Hosted on GitHub Pages
-- Firebase Realtime Database (compat SDK v10.12.2, loaded from `gstatic.com`) for live sync
-- Google Fonts "Press Start 2P" as a fallback pixel font, with an optional local `fonts/Minecraft.ttf`
-- Browser `localStorage` for single-device mode
+- [PeerJS](https://peerjs.com) 1.5.4 (loaded from jsDelivr) for WebRTC peer-to-peer connections
+- Google Fonts "Press Start 2P" as a fallback pixel font, with an optional local `Minecraft.woff2` / `Minecraft.ttf`
 
 ## Project structure
 
 ```
-index.html        the whole app (markup, styles, script)
-fonts/
-  Minecraft.ttf   optional, used automatically if present
+index.html          the whole app (markup, styles, script)
+Minecraft.ttf       optional font, used automatically if present (or Minecraft.woff2)
 README.md
 ```
 
 ## How it works
 
-**State.** All shared state is one JSON object:
+**Peer-to-peer.** The two browsers connect directly using WebRTC. The free public PeerJS broker only introduces them (signaling); game data does not pass through it. The room ID is `mcgame-chal-<6 digits>`. The broker rejects an ID that is already in use, which keeps live room codes unique.
 
-```
-rooms/<CODE> = {
-  p1, p2, target,
-  game: {
-    id, p1, p2, target, s1, s2, round,
-    used[], rounds[{ t, winner, secs }],
-    startedAt, finished, winner,
-    current: { t, d, spin },
-    roundStart
-  },
-  history[],
-  custom[]
-}
-```
+**Host-authoritative.** The host's browser holds the game state and runs all the logic. The guest never modifies state directly. It sends requests and the host validates them:
 
-**Sync.** Each client subscribes to `rooms/<CODE>` with `.on('value')`. Every change is made through `roomRef.transaction()` (compare-and-swap), so simultaneous actions can't double-score. Each award checks the round number and spin ID, and is dropped if the round has already moved on.
+- guest to host: `hello` (name), `ping`, and `act` with one of `claim`, `respin`, `undo`, `end`, `new`
+- host to guest: `state` (a full snapshot after every change), `pong`, `full`
 
-**Roulette.** The challenge is chosen when the round starts and stored with a unique `spin` ID and a `roundStart` timestamp set `SPIN_MS` (4.6s) in the future. Each client animates the reel when it sees a new spin ID, and the "got it" buttons stay disabled until `roundStart` passes.
+Each `claim` includes the round number and spin ID, so stale or duplicate clicks (for example both players pressing at once) are ignored. `new` is only accepted once a game is over.
 
-**Local mode.** With no Firebase config, the same mutation code runs against `localStorage`.
+**Roulette.** When a round starts, the host picks the challenge and stores it with a unique `spin` ID and a `roundStart` time `SPIN_MS` (4.6s) in the future. Both browsers animate the reel when they see a new spin ID, and the buttons stay disabled until it lands. The guest shifts the host's timestamps onto its own clock to correct for clock differences.
 
-**Firebase quirks handled in code.** Empty arrays and nulls are dropped by Realtime Database, so `normalize()` rebuilds them on read. `undefined` values throw on write, so `clean()` does a JSON round trip before saving.
+**Connection handling.** Each side sends a heartbeat every 4 seconds. The host frees the guest's seat after 12 seconds of silence (so a refreshed guest can rejoin), and the guest leaves the room after 15 seconds without hearing from the host.
 
 ## Setup and deployment
 
-### GitHub Pages
-1. Create a public repo and upload `index.html` (and the `fonts` folder if used).
-2. Go to **Settings → Pages**, choose **Deploy from a branch**, select `main` and `/ (root)`, then save.
-3. The site appears at `https://<username>.github.io/<repo>/`.
+1. Create a public GitHub repo and upload `index.html` (and the font file, if you have one).
+2. Go to **Settings → Pages**, choose **Deploy from a branch**, select `main` and `/ (root)`, and save.
+3. Your site appears at `https://<username>.github.io/<repo>/` after a minute or two.
 
-### Firebase sync (optional)
-1. Create a project at console.firebase.google.com.
-2. Create a **Realtime Database** (not Firestore) and start in test mode.
-3. Register a web app under **Project settings → Your apps** and copy the config.
-4. Paste the values into the `FIREBASE_CONFIG` block at the top of the script in `index.html`. `apiKey` and `databaseURL` are required.
-5. Replace the test-mode rules (they expire) under **Realtime Database → Rules**:
+There are no keys or configuration to set up.
 
-```json
-{
-  "rules": {
-    "rooms": {
-      "$room": {
-        ".read": true,
-        ".write": true
-      }
-    }
-  }
-}
-```
-
-### Font
-Download a Minecraft-style font such as Minecraftia, rename it `Minecraft.ttf`, and put it at `fonts/Minecraft.ttf`. Check the font's license before publishing.
+### Font (optional)
+Download a Minecraft-style font such as Minecraftia, rename it `Minecraft.ttf`, and put it next to `index.html`. Check the font's license before publishing.
 
 ## Customizing
 
@@ -102,18 +73,24 @@ Download a Minecraft-style font such as Minecraftia, rename it `Minecraft.ttf`, 
 - **Challenges:** edit the `BUILT_IN` array in the script, or add challenges in the UI.
 - **Spin length:** change `SPIN_MS`.
 
-## Security notes
+## Security and privacy
 
-- The Firebase web API key is public by design. It identifies the project and is not a secret. Access is controlled by the database rules.
-- The rules above are open per room. Anyone who knows a room code can read and write that room. Use a hard-to-guess code (type your own, up to 8 characters) instead of a short generated one.
-- There are no user accounts or personal data. Use nicknames.
-- User-entered text is rendered with `textContent`, not `innerHTML`.
-- Data from the database is not schema-validated, so a malicious writer with a room code could corrupt that room.
-- Optional hardening: restrict the API key to your site's domain in Google Cloud Console (APIs & Services → Credentials), or add Firebase Anonymous Auth with stricter rules.
-- Stay on the free Spark plan so usage can't be billed.
+- **No secrets and no storage.** There is no API key, database, cookie, or `localStorage`. Everything lives in memory and disappears when the page closes.
+- **Room codes** are exactly 6 digits, generated with `crypto.getRandomValues`. A room exists only while the host's tab is open and accepts one guest at a time. The host sees who joined and can remove them.
+- **Input handling:** the invite link is accepted only if it is exactly 6 digits. Names and challenge text are stripped of control characters and `<>` and length-limited. All text from other people is inserted with `textContent`, never `innerHTML`.
+- **Untrusted network data:** messages are checked against a whitelist and size/rate limits. The guest can only send five kinds of requests, and the host rebuilds and validates every one. The guest also rebuilds each state snapshot from known fields with strict types and limits.
+- **Content Security Policy:** a meta tag restricts scripts to the page itself and jsDelivr, and network connections to the PeerJS broker.
+- **Known limits:**
+  - A 6-digit code has 1,000,000 possibilities. Share it privately and remove any unexpected player.
+  - WebRTC reveals each player's IP address to the other player, and the PeerJS broker sees IPs and the room code. Only play with people you trust.
+  - The PeerJS broker is a free community service with no uptime guarantee (single player still works).
+  - PeerJS loads from a CDN at a pinned version. For maximum control, download `peerjs.min.js` into the repo and reference it locally (and update the CSP accordingly).
+  - If the host loses connection or closes the tab, the game ends for both players.
 
-## Limitations
+## Troubleshooting
 
-- Scores are visible to anyone with the room code.
-- Free Firebase limits apply. This app uses a tiny fraction of them.
-- Simultaneous edits are last-write-wins, except scoring, which uses transactions.
+- **"No open room with that code":** the host must keep their tab open, and the code must be typed exactly.
+- **"That room already has two players":** the host can click Remove Player, or the guest can wait up to about 12 seconds after a disconnect and rejoin.
+- **Can't connect on some networks:** strict corporate or carrier networks can block WebRTC. Try another network or a phone hotspot.
+- **Changes don't show after editing:** hard refresh (Ctrl/Cmd + Shift + R) and wait 1-2 minutes for GitHub Pages.
+- **Something stopped working after adding a library or service:** check the Content Security Policy meta tag in `<head>`.
