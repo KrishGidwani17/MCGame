@@ -3,10 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Content Security Policy: only this page's own inline code plus the PeerJS library (jsDelivr) may run,
+<!-- Content Security Policy: only this page's own inline code plus this exact pinned PeerJS file may run,
      and the page may only talk to the PeerJS matchmaking server. If you ever add another library or
-     service and something stops working, this line is the first place to look. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src https://0.peerjs.com wss://0.peerjs.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+     service and something stops working, this line is the first place to look.
+     TODO (optional, extra hardening): download this exact peerjs.min.js into the repo and reference it
+     locally, then this CSP can drop cdn.jsdelivr.net entirely and drop 'unsafe-inline' by moving the
+     script below into its own .js file. If you keep the CDN, you can also add a Subresource Integrity
+     (SRI) hash: generate one at https://www.srihash.org for the exact URL below and add
+     integrity="sha384-..." crossorigin="anonymous" to the <script> tag near the bottom of this file. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src https://0.peerjs.com wss://0.peerjs.com; img-src 'self' data:; base-uri 'none'; form-action 'none'">
 <title>Minecraft Challenge Night</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -168,7 +173,12 @@ details summary { cursor: pointer; font-size: 11px; }
 
 <header>
   <h1>⛏ Minecraft Challenge Night</h1>
-  <p>First one to do it wins the point!</p>
+  <p>Play Minecraft separately — this page just picks challenges and keeps score.</p>
+  <p class="small-note" style="opacity:.75;max-width:480px;margin:8px auto 0">
+    Multiplayer connects your browser straight to your partner's (peer-to-peer). That means you can each
+    see one another's IP address, and this is an honor system: it trusts you to say when you finish a
+    challenge in the game.
+  </p>
 </header>
 
 <main>
@@ -194,6 +204,16 @@ details summary { cursor: pointer; font-size: 11px; }
     </div>
     <p class="msg muted" id="menuMsg"></p>
     <p class="muted small-note" style="margin-bottom:0">Nothing is saved: names and scores only exist while the page is open.</p>
+  </section>
+
+  <!-- JOIN APPROVAL (host only; can appear in the lobby OR mid-game, e.g. after a reconnect attempt) -->
+  <section class="panel hidden" id="approvalPanel">
+    <h2>Someone wants to join</h2>
+    <p class="msg" id="pendingMsg"></p>
+    <div class="row left">
+      <button class="green small" id="acceptBtn">✅ Accept</button>
+      <button class="small red" id="declineBtn">✖ Decline</button>
+    </div>
   </section>
 
   <!-- LOBBY (host waiting / guest waiting) -->
@@ -228,6 +248,9 @@ details summary { cursor: pointer; font-size: 11px; }
   <section class="panel hidden" id="gamePanel">
     <h2>Scoreboard</h2>
     <div class="roomline muted" id="roomLine"></div>
+    <div class="row left hidden" id="hostGameControls" style="margin-top:0 0 10px">
+      <button class="small" id="removeBtn">Remove Player</button>
+    </div>
     <div class="scoreboard" id="scoreboard">
       <div class="player p1" id="card1"><div class="name" id="n1"></div><div class="score" id="s1">0</div></div>
       <div class="vs" id="vs">VS</div>
@@ -266,6 +289,7 @@ details summary { cursor: pointer; font-size: 11px; }
       <button class="green" id="againBtn">▶ Play Again</button>
       <button id="undoBtn2">↩ Undo Last Point</button>
     </div>
+    <p class="msg hidden" id="guestWaitMsg">Waiting for the host to start a new game…</p>
 
     <div class="row left" style="margin-top:18px"><button class="small red" id="leaveBtn">Leave Game</button></div>
 
@@ -302,7 +326,10 @@ details summary { cursor: pointer; font-size: 11px; }
   const ROW = 72;
   const PEER_PREFIX = "mcgame-chal-";       // namespaces our room IDs on the shared PeerJS broker
   const CODE_RE = /^\d{6}$/;                // room codes are ALWAYS exactly 6 digits
-  const ACTS = ["claim", "respin", "undo", "end", "new"];
+  const HELLO_DEADLINE_MS = 5000;           // a connecting peer must say hello within this long
+  const GUEST_FREE_MS = 30000;              // grace period before a dropped guest's seat is given up
+  const MAX_MSG_LEN = 4000;                 // reject oversized network messages outright
+  const MAX_RECONNECT_TRIES = 8;
 
   const BUILT_IN = [
     { t: "Bake a cake", d: "Medium" },
@@ -361,10 +388,17 @@ details summary { cursor: pointer; font-size: 11px; }
   let S = freshState();
   let role = null;            // null | "solo" | "host" | "guest"
   let peer = null, conn = null;
-  let guestReady = false;     // host side: guest has said hello
+  let guestReady = false;     // host side: guest has been accepted and is playing
   let roomCode = "";
   let lastSeen = 0, hbTimer = null;
   let msgWindowStart = 0, msgCount = 0;
+  // host side: a connection that has opened but has not yet been approved to join
+  let pendingConn = null, pendingName = "";
+  // host side: a one-time secret handed to an accepted guest, so they (and only they) can silently
+  // rejoin after a dropped connection without going through Accept/Decline again
+  let guestToken = null, guestFreeTimer = null;
+  // guest side: our copy of that token, and whether we are currently trying to recover a connection
+  let myToken = null, reconnecting = false, reconnectTimer = null, reconnectAttempts = 0;
 
   const $ = id => document.getElementById(id);
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -434,7 +468,7 @@ details summary { cursor: pointer; font-size: 11px; }
     g.roundStart = Date.now() + SPIN_MS;
   }
   function newGameLocal() {
-    const g = { id: uid(), s1: 0, s2: 0, round: 1, used: [], rounds: [], startedAt: Date.now(),
+    const g = { id: uid(), s1: 0, s2: 0, round: 1, used: [], rounds: [], startedAt: Date.now(), endedAt: null,
                 finished: false, early: false, winner: 0, current: null, roundStart: 0 };
     setCurrent(g, pick(g));
     S.game = g;
@@ -451,7 +485,7 @@ details summary { cursor: pointer; font-size: 11px; }
     if (who === 1) g.s1++; else g.s2++;
     g.rounds.push({ t: g.current.t, winner: who, secs });
     if (g.s1 >= S.target || g.s2 >= S.target) {
-      g.finished = true; g.winner = g.s1 >= S.target ? 1 : 2;
+      g.finished = true; g.winner = g.s1 >= S.target ? 1 : 2; g.endedAt = Date.now();
     } else {
       g.round++;
       setCurrent(g, pick(g));
@@ -467,7 +501,7 @@ details summary { cursor: pointer; font-size: 11px; }
   function aUndo() {
     const g = S.game;
     if (!g || !g.rounds.length) return;
-    if (g.finished) { g.finished = false; g.early = false; g.winner = 0; } else { g.round--; }
+    if (g.finished) { g.finished = false; g.early = false; g.winner = 0; g.endedAt = null; } else { g.round--; }
     const last = g.rounds.pop();
     if (last.winner === 1) g.s1--; else g.s2--;
     const found = pool().find(c => c.t === last.t);
@@ -477,13 +511,16 @@ details summary { cursor: pointer; font-size: 11px; }
   function aEnd() {
     const g = S.game;
     if (!g || g.finished) return;
-    g.finished = true; g.early = true; g.winner = leader(g);
+    g.finished = true; g.early = true; g.winner = leader(g); g.endedAt = Date.now();
     commit();
   }
   function aNew() {
     if (S.game && !S.game.finished) return;   // only allowed once a game is over
     newGameLocal();
   }
+  // Administrative actions (respin/undo/end/new) only ever run from a first-party button press by
+  // whoever is host (or solo). A guest cannot trigger them: see hostData(), which only ever calls
+  // aClaim() for messages arriving from a connection, regardless of what a modified client might send.
   function runAct(a, who, round, spin) {
     if (a === "claim") aClaim(who, round, spin);
     else if (a === "respin") aRespin(spin);
@@ -492,8 +529,11 @@ details summary { cursor: pointer; font-size: 11px; }
     else if (a === "new") aNew();
   }
 
-  // What a button press does depends on who pressed it.
+  // What a button press does depends on who pressed it. A guest's UI only shows the claim button,
+  // but this check is a second, server-independent line of defense: even a hand-edited guest page
+  // cannot ask the host to undo, respin, end, or restart.
   function act(a) {
+    if (role === "guest" && a !== "claim") return;
     const g = S.game;
     const round = g ? g.round : 0, spin = g && g.current ? g.current.spin : "";
     if (role === "guest") {
@@ -532,15 +572,25 @@ details summary { cursor: pointer; font-size: 11px; }
     if (now - msgWindowStart > 1000) { msgWindowStart = now; msgCount = 0; }
     return ++msgCount > 25;
   }
+  function tooBig(m) {
+    try { return JSON.stringify(m).length > MAX_MSG_LEN; } catch (e) { return true; }
+  }
+  function badMsg(m) {
+    return !m || typeof m !== "object" || tooFast() || tooBig(m);
+  }
   function teardown() {
     clearInterval(hbTimer); hbTimer = null;
-    const c = conn, p = peer;
+    clearTimeout(reconnectTimer); reconnectTimer = null;
+    const c = conn, pc = pendingConn, p = peer;
     conn = null; peer = null; guestReady = false;
+    pendingConn = null; pendingName = "";
     try { if (c) c.close(); } catch (e) {}
+    try { if (pc && pc !== c) pc.close(); } catch (e) {}
     try { if (p) p.destroy(); } catch (e) {}
   }
   function resetToMenu(msg, isErr) {
-    role = null;
+    role = null; reconnecting = false; reconnectAttempts = 0; myToken = null;
+    guestToken = null; clearTimeout(guestFreeTimer);
     teardown();
     S = freshState();
     roomCode = "";
@@ -573,15 +623,28 @@ details summary { cursor: pointer; font-size: 11px; }
         render();
       });
       p.on("connection", c => {
-        if (conn) {                        // room already has a player: turn everyone else away
+        if (conn || pendingConn) {         // seat taken, or someone else is already mid-handshake
           c.on("open", () => { try { c.send({ t: "full" }); } catch (e) {} setTimeout(() => { try { c.close(); } catch (e) {} }, 300); });
           return;
         }
-        conn = c; guestReady = false; lastSeen = Date.now();
-        c.on("data", m => hostData(c, m));
-        c.on("close", () => { if (conn === c) { conn = null; guestReady = false; render(); } });
+        // Nobody is accepted into the room just by connecting. They have five seconds to say hello
+        // (see hostData) — either with a valid reconnect token, or as a new candidate who then needs
+        // an explicit Accept from the host. Anything else and the connection is dropped.
+        pendingConn = c;
+        const deadline = setTimeout(() => {
+          if (pendingConn === c) { try { c.close(); } catch (e) {} pendingConn = null; render(); }
+        }, HELLO_DEADLINE_MS);
+        c.on("data", m => hostData(c, m, deadline));
+        c.on("close", () => {
+          clearTimeout(deadline);
+          if (pendingConn === c) { pendingConn = null; pendingName = ""; render(); }
+          if (conn === c) {
+            conn = null; guestReady = false;
+            if (guestToken) armGuestFreeTimer();   // was an accepted guest: hold their seat briefly
+            render();
+          }
+        });
         c.on("error", () => {});
-        render();
       });
       p.on("disconnected", () => { try { if (peer === p && !p.destroyed) p.reconnect(); } catch (e) {} });
       p.on("error", err => {
@@ -596,24 +659,59 @@ details summary { cursor: pointer; font-size: 11px; }
     create();
   }
 
-  function hostData(c, m) {
-    if (c !== conn || !m || typeof m !== "object" || tooFast()) return;
-    lastSeen = Date.now();
-    if (m.t === "hello") {
-      if (guestReady) return;
-      guestReady = true;
-      S.p2 = cleanName(m.name, "Player 2");
-      commit();
-    } else if (m.t === "ping") {
-      try { c.send({ t: "pong" }); } catch (e) {}
-    } else if (m.t === "act" && guestReady) {
-      if (typeof m.a !== "string" || !ACTS.includes(m.a)) return;
-      runAct(m.a, 2, num(m.round, 0, 1000, 0), str(m.spin, 24));
+  function hostData(c, m, deadline) {
+    if (badMsg(m)) return;
+    if (c === conn) {
+      lastSeen = Date.now();
+      if (m.t === "ping") { try { c.send({ t: "pong" }); } catch (e) {} }
+      // Only "claim" is ever honored from a guest, no matter what a modified client sends.
+      else if (m.t === "act" && guestReady && m.a === "claim") runAct("claim", 2, num(m.round, 0, 1000, 0), str(m.spin, 24));
+      return;
     }
+    if (c !== pendingConn || m.t !== "hello") return;   // only a hello from the pending connection matters
+    const name = cleanName(m.name, "Player 2");
+    const token = str(m.token, 24);
+    if (guestToken && token && token === guestToken && !conn) {
+      // A matching secret: this is the same guest reconnecting after a drop. No new approval needed.
+      clearTimeout(deadline);
+      pendingConn = null;
+      conn = c; guestReady = true; lastSeen = Date.now();
+      clearTimeout(guestFreeTimer);
+      try { c.send({ t: "accepted", token: guestToken }); } catch (e) {}
+      commit();
+      return;
+    }
+    // A new candidate: hold the connection and ask the host to Accept or Decline.
+    clearTimeout(deadline);
+    pendingName = name;
+    render();
+  }
+  function acceptGuest() {
+    if (!pendingConn) return;
+    conn = pendingConn; pendingConn = null;
+    guestReady = true; lastSeen = Date.now();
+    S.p2 = pendingName || "Player 2"; pendingName = "";
+    guestToken = uid();                    // secret the guest can use to silently rejoin later
+    clearTimeout(guestFreeTimer);
+    try { conn.send({ t: "accepted", token: guestToken }); } catch (e) {}
+    commit();
+  }
+  function declineGuest() {
+    if (!pendingConn) return;
+    try { pendingConn.send({ t: "full" }); } catch (e) {}
+    try { pendingConn.close(); } catch (e) {}
+    pendingConn = null; pendingName = "";
+    render();
+  }
+  function armGuestFreeTimer() {
+    // Give a disconnected guest a window to reconnect with their token before the seat opens back up.
+    clearTimeout(guestFreeTimer);
+    guestFreeTimer = setTimeout(() => { guestToken = null; render(); }, GUEST_FREE_MS);
   }
   function dropGuest() {
     const c = conn;
-    conn = null; guestReady = false;
+    conn = null; guestReady = false; guestToken = null;   // explicit removal revokes their reconnect token
+    clearTimeout(guestFreeTimer);
     try { if (c) c.close(); } catch (e) {}
     render();
   }
@@ -627,6 +725,7 @@ details summary { cursor: pointer; font-size: 11px; }
     setMsg("Connecting…");
     $("joinBtn").disabled = true;
     teardown();
+    myToken = null; reconnecting = false; reconnectAttempts = 0;
     let opened = false;
     const fail = text => { clearTimeout(timer); teardown(); role = null; $("joinBtn").disabled = false; setMsg(text, true); render(); };
     const timer = setTimeout(() => { if (!opened) fail("Could not reach that room. Check the code and try again."); }, 15000);
@@ -637,16 +736,17 @@ details summary { cursor: pointer; font-size: 11px; }
       conn = c;
       c.on("open", () => {
         opened = true; clearTimeout(timer);
-        role = "guest"; roomCode = code; S = freshState(); S.mode = "multi";
+        role = "guest"; roomCode = code; S = freshState(); S.mode = "multi"; S.p2 = name;
         lastSeen = Date.now();
         hbTimer = setInterval(heartbeat, 4000);
         $("joinBtn").disabled = false;
         setMsg("");
-        c.send({ t: "hello", name });
+        c.send({ t: "hello", name, token: "" });
         render();
       });
       c.on("data", guestData);
-      c.on("close", () => { if (role === "guest") resetToMenu("The host left the game.", false); });
+      // A dropped connection doesn't immediately end the game: try to recover first (see startReconnect).
+      c.on("close", () => { if (role === "guest") startReconnect(); });
       c.on("error", () => { if (!opened) fail("Could not connect to that room."); });
     });
     p.on("error", err => {
@@ -656,28 +756,73 @@ details summary { cursor: pointer; font-size: 11px; }
     });
   }
 
+  // Tries to silently reconnect to the same room using our saved token, a few times with a short
+  // pause between attempts, before giving up and sending the player back to the menu. Covers brief
+  // network blips (a locked phone, a dropped wifi signal) without ending the game outright.
+  function startReconnect() {
+    if (role !== "guest" || reconnecting) return;
+    reconnecting = true; reconnectAttempts = 0;
+    render();
+    attemptReconnect();
+  }
+  function attemptReconnect() {
+    if (!reconnecting || role !== "guest") return;
+    reconnectAttempts++;
+    if (reconnectAttempts > MAX_RECONNECT_TRIES) { resetToMenu("Lost connection to the host.", true); return; }
+    const c0 = conn, p0 = peer;
+    conn = null; peer = null;
+    try { if (c0) c0.close(); } catch (e) {}
+    try { if (p0) p0.destroy(); } catch (e) {}
+    let opened = false;
+    const p = new Peer({ debug: 0 });
+    peer = p;
+    p.on("open", () => {
+      if (!reconnecting) return;
+      const c = p.connect(PEER_PREFIX + roomCode, { serialization: "json", reliable: true });
+      conn = c;
+      c.on("open", () => {
+        opened = true;
+        lastSeen = Date.now();
+        c.send({ t: "hello", name: S.p2 || "Player 2", token: myToken || "" });
+      });
+      c.on("data", guestData);
+      c.on("close", () => { if (reconnecting) reconnectTimer = setTimeout(attemptReconnect, 3000); });
+      c.on("error", () => { if (reconnecting && !opened) reconnectTimer = setTimeout(attemptReconnect, 3000); });
+    });
+    p.on("error", () => { if (reconnecting) reconnectTimer = setTimeout(attemptReconnect, 3000); });
+    render();
+  }
+
   function guestData(m) {
-    if (!m || typeof m !== "object" || tooFast()) return;
+    if (badMsg(m)) return;
     lastSeen = Date.now();
     if (m.t === "state") {
       const s = sanitizeState(m.s);
       if (!s) return;
+      reconnecting = false; reconnectAttempts = 0; clearTimeout(reconnectTimer);
       // The host's clock and ours differ. Shift its timestamps onto our clock.
       const offset = Date.now() - s.now;
       if (s.game) s.game.roundStart += offset;
       S = s;
       render();
+    } else if (m.t === "accepted") {
+      myToken = str(m.token, 24);
     } else if (m.t === "full") {
-      resetToMenu("That room already has two players.", true);
+      if (reconnecting) resetToMenu("Someone else took your seat while you were reconnecting.", true);
+      else resetToMenu("That room already has two players.", true);
     }
   }
 
   function heartbeat() {
     if (role === "guest") {
       if (conn && conn.open) { try { conn.send({ t: "ping" }); } catch (e) {} }
-      if (Date.now() - lastSeen > 15000) resetToMenu("Lost connection to the host.", true);
+      if (!reconnecting && Date.now() - lastSeen > 15000) startReconnect();
     } else if (role === "host") {
-      if (conn && Date.now() - lastSeen > 12000) dropGuest();   // guest vanished: free the seat
+      if (conn && Date.now() - lastSeen > 12000) {
+        conn = null; guestReady = false;
+        if (guestToken) armGuestFreeTimer();
+        render();
+      }
     }
   }
 
@@ -760,6 +905,7 @@ details summary { cursor: pointer; font-size: 11px; }
 
   function render() {
     const solo = role === "solo";
+    const isGuest = role === "guest";
     const hasGame = !!(role && S.game);
     const inLobby = (role === "host" || role === "guest") && !S.game;
 
@@ -767,7 +913,11 @@ details summary { cursor: pointer; font-size: 11px; }
     $("lobbyPanel").classList.toggle("hidden", !inLobby);
     $("gamePanel").classList.toggle("hidden", !hasGame);
     $("challengePanel").classList.toggle("hidden", !role);
-    $("customBox").classList.toggle("hidden", role === "guest");
+    $("customBox").classList.toggle("hidden", isGuest);
+
+    // Shown any time the host has a candidate waiting for Accept/Decline, in the lobby or mid-game.
+    $("approvalPanel").classList.toggle("hidden", !(role === "host" && pendingConn));
+    if (role === "host" && pendingConn) $("pendingMsg").textContent = (pendingName || "Someone") + " wants to join. Accept them?";
 
     if (inLobby) {
       const host = role === "host";
@@ -778,9 +928,12 @@ details summary { cursor: pointer; font-size: 11px; }
         $("codeShow").textContent = roomCode;
         const ready = !!(conn && guestReady);
         $("lobbyStatus").textContent = ready ? "✅ " + S.p2 + " joined! Set the goal and start when ready."
-          : conn ? "🟡 Someone is connecting…" : "🟡 Waiting for your partner. Send them the code or the invite link.";
+          : pendingConn ? "🟡 Check the panel above to accept or decline a player."
+          : "🟡 Waiting for your partner. Send them the code or the invite link.";
         $("startMultiBtn").disabled = !ready;
-        $("kickBtn").classList.toggle("hidden", !conn);
+        $("kickBtn").classList.toggle("hidden", !ready);
+      } else if (reconnecting) {
+        $("guestStatus").textContent = "🟡 Reconnecting to room " + roomCode + "… (attempt " + reconnectAttempts + "/" + MAX_RECONNECT_TRIES + ")";
       } else {
         $("guestStatus").textContent = "✅ Connected to room " + roomCode + ". Waiting for " + (S.p1 || "the host") + " to start the game…";
       }
@@ -803,17 +956,31 @@ details summary { cursor: pointer; font-size: 11px; }
       const rl = $("roomLine");
       if (solo) rl.textContent = "";
       else if (role === "host") rl.textContent = conn && guestReady ? "🟢 Room " + roomCode + " · " + S.p2 + " connected"
-        : "🟡 Room " + roomCode + " · " + S.p2 + " disconnected (they can rejoin with the same code)";
+        : guestToken ? "🟡 Room " + roomCode + " · " + S.p2 + " disconnected, waiting for them to reconnect…"
+        : "🔴 Room " + roomCode + " · " + S.p2 + " disconnected";
+      else if (reconnecting) rl.textContent = "🟡 Reconnecting to " + (S.p1 || "the host") + "… (attempt " + reconnectAttempts + "/" + MAX_RECONNECT_TRIES + ")";
       else rl.textContent = "🟢 Room " + roomCode + " · connected to " + S.p1;
+
+      // Only the host can remove a connected guest mid-game.
+      $("hostGameControls").classList.toggle("hidden", !(role === "host" && conn && guestReady));
+
+      // Administrative controls (respin/undo/end/rematch) are host/solo only. The guest only ever
+      // sees the claim button — enforced again server-side in hostData(), not just by hiding these.
+      ["skipBtn", "undoBtn", "endBtn", "undoBtn2", "againBtn"].forEach(id => $(id).classList.toggle("hidden", isGuest));
 
       $("playArea").classList.toggle("hidden", g.finished);
       $("winBanner").classList.toggle("hidden", !g.finished);
       $("afterRow").classList.toggle("hidden", !g.finished);
+      $("guestWaitMsg").classList.toggle("hidden", !(g.finished && isGuest));
       if (g.finished) {
-        const total = g.rounds.reduce((a, r) => a + r.secs, 0);
         let text;
-        if (solo) text = g.early ? "Stopped at " + g.s1 + " / " + S.target + " challenges"
-          : "★ " + S.p1 + " cleared " + S.target + " challenges in " + fmt(total) + "! ★";
+        if (solo) {
+          // Counts the whole session, including time spent on skipped challenges and reel spins —
+          // not just the sum of completed rounds — so it can't be shortened by skipping around.
+          const totalSecs = Math.round(((g.endedAt || Date.now()) - g.startedAt) / 1000);
+          text = g.early ? "Stopped at " + g.s1 + " / " + S.target + " challenges (" + fmt(totalSecs) + " elapsed)"
+            : "★ " + S.p1 + " cleared " + S.target + " challenges in " + fmt(totalSecs) + "! ★";
+        }
         else if (g.early) text = g.winner === 0 ? "Game ended in a tie at " + g.s1 + " - " + g.s2
           : "Game ended · " + (g.winner === 1 ? S.p1 : S.p2) + " leads " + g.s1 + " - " + g.s2;
         else text = "★ " + (g.winner === 1 ? S.p1 : S.p2) + " wins " + g.s1 + " - " + g.s2 + "! ★";
@@ -862,8 +1029,10 @@ details summary { cursor: pointer; font-size: 11px; }
     if (!role || !g || g.finished) return;
     const now = Date.now();
     const spinning = now < g.roundStart;
+    const offline = role === "guest" && !(conn && conn.open);
     $("casino").classList.toggle("spinning", spinning);
-    ["claimBtn", "skipBtn"].forEach(id => $(id).disabled = spinning);
+    $("claimBtn").disabled = spinning || offline;
+    $("skipBtn").disabled = spinning || offline;
     $("timer").textContent = fmt(Math.max(0, Math.floor((now - g.roundStart) / 1000)));
     if (!spinning && !reel.landed) {
       reel.landed = true;
@@ -886,6 +1055,9 @@ details summary { cursor: pointer; font-size: 11px; }
   $("copyLinkBtn").onclick = () => copyText(location.origin + location.pathname + "#" + roomCode, $("copyLinkBtn"), "🔗 Copy Invite Link");
   $("startMultiBtn").onclick = startMulti;
   $("kickBtn").onclick = dropGuest;
+  $("removeBtn").onclick = () => { if (confirm("Remove " + (S.p2 || "this player") + " from the room?")) dropGuest(); };
+  $("acceptBtn").onclick = acceptGuest;
+  $("declineBtn").onclick = declineGuest;
   $("closeRoomBtn").onclick = leave;
   $("leaveBtn").onclick = leave;
 
